@@ -64,7 +64,7 @@ export default function UnifiedHistoryPage() {
           {MODULES.map((m) => (
             <Button
               key={m}
-              variant={module === m ? "default" : "ghost"}
+              variant={module === m ? "primary" : "ghost"}
               size="sm"
               onClick={() => setModule(m)}
               className="gap-2 capitalize"

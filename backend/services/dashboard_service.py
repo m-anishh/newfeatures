@@ -1,6 +1,6 @@
 """
 Dashboard Service - Coordinates dashboard statistics.
-Uses direct Supabase client access for database operations.
+Uses the database client directly for database operations.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ import logging
 from typing import Dict, Any
 
 from backend.core.logging import get_logger
-from backend.database.supabase_client import get_supabase_client
+from backend.database.db_client import get_db_client
 
 logger = get_logger(__name__)
 
@@ -17,7 +17,7 @@ logger = get_logger(__name__)
 class DashboardService:
     """
     Service for dashboard statistics.
-    Uses Supabase client directly for database operations.
+    Uses the database client directly for database operations.
     """
 
     def __init__(self):
@@ -25,7 +25,7 @@ class DashboardService:
 
     def _get_client(self):
         if self._client is None:
-            self._client = get_supabase_client()
+            self._client = get_db_client()
         return self._client
 
     def get_dashboard_stats(self, user_id: str) -> Dict[str, Any]:
@@ -78,7 +78,7 @@ class DashboardService:
             in_progress = sum(1 for a in all_analyses if a.get("status") in ("processing", "queued"))
             
             # Calculate average trust score from completed (both image and news)
-            image_trust_scores = [a.get("overall_confidence", 0) or 0 for a in analyses if a.get("status") == "completed"]
+            image_trust_scores = [(a.get("overall_confidence", 0) or 0) * 100 for a in analyses if a.get("status") == "completed"]
             news_trust_scores = [a.get("trust_score", 0) or 0 for a in news_analyses if a.get("status") == "completed"]
             all_trust_scores = image_trust_scores + news_trust_scores
             avg_trust_score = round(sum(all_trust_scores) / len(all_trust_scores), 1) if all_trust_scores else 0

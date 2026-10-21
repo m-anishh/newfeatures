@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional, List
 
 from backend.core.logging import get_logger
 from backend.core.config import settings
-from backend.database.supabase_client import get_supabase_client
+from backend.database.db_client import get_db_client
 from backend.services.news_pipeline_evidence_first import NewsPipelineEvidenceFirst
 
 logger = get_logger(__name__)
@@ -30,7 +30,7 @@ class NewsVerificationService:
 
     def _get_client(self):
         if self._client is None:
-            self._client = get_supabase_client()
+            self._client = get_db_client()
         return self._client
 
     async def start_verification(

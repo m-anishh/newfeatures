@@ -18,7 +18,7 @@ import httpx
 
 from backend.core.config import settings
 from backend.core.logging import get_logger
-from backend.database.supabase_client import get_supabase_client
+from backend.database.db_client import get_db_client
 from backend.services.news_evidence_collector import news_evidence_collector
 
 logger = get_logger(__name__)
@@ -30,7 +30,7 @@ class NewsPipelineEvidenceFirst:
     def __init__(self, user_id: str, analysis_id: str):
         self.user_id = user_id
         self.analysis_id = analysis_id
-        self.client = get_supabase_client()
+        self.client = get_db_client()
         self.start_time: float = 0.0
         
         # NVIDIA Nemotron configuration
@@ -212,6 +212,9 @@ SUPPORTING EVIDENCE:
 CONTRADICTING EVIDENCE:
 {json.dumps(evidence_package.get('contradicting_evidence', [])[:3], indent=2)[:800]}
 
+TRUSTED SOURCE COVERAGE (20 sources searched; a match means the source covered the same topic):
+{json.dumps({k: v for k, v in evidence_package.get('source_coverage', {}).items() if k != 'per_source'}, indent=2)[:600]}
+
 Return ONLY a valid JSON object with this exact structure:
 {{
     "executive_summary": "string",
@@ -227,45 +230,73 @@ Return ONLY a valid JSON object with this exact structure:
 }}"""
 
     def _fallback_reasoning(self, evidence_package: Dict) -> Dict:
-        """Fallback reasoning when LLM is unavailable."""
+        """Rule-based verdict from trusted-source coverage when no LLM is available.
+
+        - Fact-check debunks lower the score.
+        - Each distinct trusted source reporting the same story raises it.
+        - No coverage at all stays "mixed": absence of coverage is not proof either way.
+        """
         claims = evidence_package.get("claims", [])
         supporting = evidence_package.get("supporting_evidence", [])
         contradicting = evidence_package.get("contradicting_evidence", [])
-        
-        # Simple heuristic scoring
-        support_score = len(supporting) * 10
-        contradict_score = len(contradicting) * 15
-        base_score = 50 + support_score - contradict_score
-        confidence = max(0, min(100, base_score))
-        
-        if confidence >= 70:
-            verdict = "likely_true"
-            risk = "low"
-        elif confidence >= 50:
-            verdict = "mixed"
-            risk = "medium"
-        elif confidence >= 25:
-            verdict = "suspicious"
-            risk = "high"
+        coverage = evidence_package.get("source_coverage", {})
+        total = coverage.get("sources_total", 20)
+        reachable = coverage.get("sources_reachable", 0)
+        support_sources = sorted({e.get("publisher", "") for e in supporting})
+        debunk_sources = sorted({e.get("publisher", "") for e in contradicting})
+
+        if debunk_sources:
+            score = max(5, 35 - 12 * len(debunk_sources) + 4 * len(support_sources))
+        elif support_sources:
+            score = min(95, 55 + 10 * len(support_sources))
         else:
-            verdict = "likely_false"
-            risk = "critical"
+            score = 45
+
+        if score >= 85:
+            verdict, risk = "verified", "minimal"
+        elif score >= 65:
+            verdict, risk = "likely_true", "low"
+        elif score >= 45:
+            verdict, risk = "mixed", "medium"
+        elif score >= 25:
+            verdict, risk = "suspicious", "high"
+        else:
+            verdict, risk = "likely_false", "critical"
+
+        if debunk_sources:
+            summary = f"Fact-check coverage that questions this story was found from: {', '.join(debunk_sources)}."
+        elif support_sources:
+            summary = (f"{len(support_sources)} of {total} trusted sources reported the same story: "
+                       f"{', '.join(support_sources)}.")
+        else:
+            summary = (f"No coverage found in {total} trusted sources ({reachable} reachable). "
+                       "The claim could not be corroborated; this is not proof that it is false.")
+
+        recommendations = []
+        if not support_sources:
+            recommendations.append("No trusted outlet reported this yet - wait for confirmation before sharing.")
+        if debunk_sources:
+            recommendations.append("Read the linked fact-check articles before sharing.")
+        recommendations += ["Check the publication date and original context",
+                            "Open the linked source articles to confirm the details match"]
 
         return {
-            "executive_summary": f"Analysis completed with {len(claims)} claims analyzed. {len(supporting)} supporting and {len(contradicting)} contradicting evidence items found.",
+            "executive_summary": summary,
             "overall_verdict": verdict,
-            "confidence": confidence,
-            "authenticity_score": confidence,
+            "confidence": score,
+            "authenticity_score": score,
             "risk_level": risk,
-            "claims": [{"claim": c.get("claim", ""), "status": "unverified", "confidence": 50, "reasoning": "Limited evidence available"} for c in claims[:5]],
-            "bias_analysis": {"political_bias": "neutral", "bias_score": 0, "explanation": "No significant bias detected"},
-            "misinformation_indicators": [],
-            "recommendations": [
-                "Verify with additional trusted sources",
-                "Check publication date and context",
-                "Cross-reference claims with official sources"
-            ],
-            "reasoning": f"Based on analysis of {len(claims)} claims with {len(supporting)} supporting and {len(contradicting)} contradicting evidence items."
+            "claims": [{"claim": c.get("claim", ""),
+                        "status": "corroborated" if support_sources else ("disputed" if debunk_sources else "unverified"),
+                        "confidence": score,
+                        "reasoning": summary} for c in claims[:5]],
+            "bias_analysis": {"political_bias": "not assessed", "bias_score": 0,
+                              "explanation": "Bias is not assessed without an AI model"},
+            "misinformation_indicators": [f"Fact-check: {e.get('title', '')}" for e in contradicting[:3]],
+            "recommendations": recommendations,
+            "reasoning": (f"Searched {total} trusted sources for: {', '.join(coverage.get('search_terms', []))}. "
+                          f"{len(supporting)} supporting article(s) from {len(support_sources)} source(s); "
+                          f"{len(contradicting)} fact-check article(s)."),
         }
 
     def _build_results(self, reasoning: Dict, evidence_package: Dict, processing_time_ms: int) -> Dict[str, Any]:
@@ -294,7 +325,9 @@ Return ONLY a valid JSON object with this exact structure:
                 "ai_explanation": reasoning.get("reasoning", ""),
                 "ai_reasoning": reasoning,
                 "entities": evidence_package.get("entities", {}),
-                "source_credibility": {},
+                "source_credibility": evidence_package.get("source_coverage", {}),
+                "source_coverage": evidence_package.get("source_coverage", {}),
+                "missing_information": evidence_package.get("missing_information", []),
                 "recommendations": reasoning.get("recommendations", []),
                 "confidence_factors": {},
                 "verdict_details": {

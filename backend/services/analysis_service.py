@@ -1,6 +1,6 @@
 """
 Analysis Service - Coordinates analysis workflows.
-Uses direct Supabase client access instead of repository dependency.
+Uses the database client directly instead of a repository dependency.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from backend.core.logging import get_logger
 from backend.core.exceptions import AnalysisError, ValidationError
 from backend.events.event_bus import event_bus
-from backend.database.supabase_client import get_supabase_client
+from backend.database.db_client import get_db_client
 from backend.services.agents.pipeline_orchestrator import pipeline_orchestrator
 from backend.services.video_analysis_service import video_analysis_service
 
@@ -23,7 +23,7 @@ logger = get_logger(__name__)
 class AnalysisService:
     """
     Service for managing analysis workflows.
-    Uses Supabase client directly for database operations.
+    Uses the database client directly for database operations.
     """
 
     def __init__(self):
@@ -31,7 +31,7 @@ class AnalysisService:
 
     def _get_client(self):
         if self._client is None:
-            self._client = get_supabase_client()
+            self._client = get_db_client()
         return self._client
 
     def _table(self, name: str):

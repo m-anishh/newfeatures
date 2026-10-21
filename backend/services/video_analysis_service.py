@@ -16,7 +16,7 @@ from typing import Any, Dict, Optional
 
 from backend.core.exceptions import AnalysisError
 from backend.core.logging import get_logger
-from backend.database.supabase_client import get_supabase_client
+from backend.database.db_client import get_db_client
 from backend.repositories.storage_repository import StorageRepository
 from backend.video.pipeline import video_pipeline
 
@@ -32,7 +32,7 @@ class VideoAnalysisService:
 
     def _get_client(self):
         if self._client is None:
-            self._client = get_supabase_client()
+            self._client = get_db_client()
         return self._client
 
     def _table(self, name: str):

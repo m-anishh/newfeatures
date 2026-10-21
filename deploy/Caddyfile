@@ -1,0 +1,31 @@
+# VisionX – HTTPS and routing. {$SITE_HOST} comes from deploy/.env.
+{$SITE_HOST} {
+	encode gzip
+
+	# Backend API and files
+	@backend path /api/auth* /api/v1* /video/* /health /storage/* /docs* /openapi.json
+	handle @backend {
+		reverse_proxy backend:8000
+	}
+
+	# Everything else: the Next.js app (including its own /api/video/upload route)
+	handle {
+		reverse_proxy frontend:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	request_body {
+		max_size 500MB
+	}
+}
+
+# Anyone opening the bare IP (http://98.87.250.9) is sent to the HTTPS hostname
+http:// {
+	redir https://{$SITE_HOST}{uri} permanent
+}

@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from backend.core.exceptions import NotFoundError
 from backend.core.logging import get_logger
 from backend.api.dependencies import get_current_user
-from backend.database.supabase_client import get_supabase_client
+from backend.database.db_client import get_db_client
 
 logger = get_logger(__name__)
 
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/v1/reports", tags=["reports"])
 
 
 def _client():
-    return get_supabase_client().schema("public")
+    return get_db_client().schema("public")
 
 
 @router.get("/")

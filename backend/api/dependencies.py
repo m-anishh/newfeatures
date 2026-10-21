@@ -11,9 +11,9 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.core.auth import decode_token
 from backend.core.exceptions import AuthenticationError, InvalidTokenError
 from backend.database.session import get_session
-from backend.database.supabase_client import get_supabase_client
 from backend.core.logging import set_correlation_id, get_logger
 
 logger = get_logger(__name__)
@@ -22,26 +22,21 @@ logger = get_logger(__name__)
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
-def verify_supabase_token(token: str) -> dict:
-    """Verify a Supabase access token and return the authenticated user data."""
+def verify_access_token(token: str) -> dict:
+    """Verify a VisionX access token (JWT) and return the authenticated user data.
+
+    Tokens are issued by backend.core.auth.
+    """
     try:
-        result = get_supabase_client().auth.get_user(token)
-    except Exception as exc:
-        logger.warning("Supabase token verification failed: %s", exc)
-        raise InvalidTokenError(message="Invalid or expired token") from exc
-
-    user = getattr(result, "user", None)
-    if user is None:
-        raise InvalidTokenError(message="Invalid or expired token")
-
-    user_id = getattr(user, "id", None)
-    if not user_id:
-        raise InvalidTokenError(message="Invalid token")
+        claims = decode_token(token)
+    except InvalidTokenError as exc:
+        logger.warning("Token verification failed: %s", exc)
+        raise
 
     return {
-        "sub": user_id,
-        "email": getattr(user, "email", "") or "",
-        "user": user,
+        "sub": claims["sub"],
+        "email": claims.get("email", "") or "",
+        "user": {"id": claims["sub"], "email": claims.get("email", "")},
     }
 
 
@@ -49,7 +44,7 @@ async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
 ) -> str:
     """
-    FastAPI dependency that extracts and validates the current user from Supabase JWT.
+    FastAPI dependency that extracts and validates the current user from the VisionX JWT.
     
     Returns:
         User ID string
@@ -61,7 +56,7 @@ async def get_current_user(
         raise AuthenticationError(message="Authentication required")
 
     token = credentials.credentials
-    payload = verify_supabase_token(token)
+    payload = verify_access_token(token)
     user_id = payload["sub"]
     set_correlation_id(user_id)
     return user_id

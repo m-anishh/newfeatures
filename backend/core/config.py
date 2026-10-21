@@ -37,10 +37,7 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api/v4"
     CORS_ORIGINS: str = "*"
 
-    # ---- Database (Supabase/PostgreSQL) ----
-    SUPABASE_URL: Optional[str] = None
-    SUPABASE_SERVICE_KEY: Optional[str] = Field(default=None, alias="SUPABASE_SERVICE_ROLE_KEY")
-    SUPABASE_ANON_KEY: Optional[str] = None
+    # ---- Database (PostgreSQL / AWS RDS) ----
     DATABASE_URL: Optional[str] = None  # Direct PostgreSQL connection string
     DATABASE_SCHEMA: str = "visionx"
     DATABASE_POOL_SIZE: int = 10
@@ -62,7 +59,7 @@ class Settings(BaseSettings):
     PASSWORD_BCRYPT_ROUNDS: int = 12
 
     # ---- Storage ----
-    STORAGE_BACKEND: Literal["supabase", "s3", "local"] = "supabase"
+    STORAGE_BACKEND: Literal["s3", "local"] = "local"
     STORAGE_BUCKET_ANALYSIS: str = "analysis-files"
     STORAGE_BUCKET_REPORTS: str = "reports"
     STORAGE_BUCKET_EVIDENCE: str = "evidence"

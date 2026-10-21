@@ -231,7 +231,7 @@ class DatabaseError(VisionXError):
 
 
 class StorageError(VisionXError):
-    """Storage operation failure (S3, Supabase, local)."""
+    """Storage operation failure (S3, local)."""
 
     def __init__(self, message: str = "Storage operation failed", details: Optional[Dict[str, Any]] = None):
         super().__init__(

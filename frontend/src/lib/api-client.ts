@@ -88,9 +88,9 @@ class APIClient {
 
   private async refreshToken(): Promise<boolean> {
     try {
-      const { supabase } = await import("@/lib/supabase");
-      
-      const { data, error } = await supabase.auth.refreshSession();
+      const { authClient } = await import("@/lib/auth-session");
+
+      const { data, error } = await authClient.auth.refreshSession();
       
       if (error || !data.session) {
         return false;
@@ -112,13 +112,13 @@ class APIClient {
     this.setToken(session.access_token);
 
     try {
-      const { supabase } = await import("@/lib/supabase");
-      await supabase.auth.setSession({
+      const { authClient } = await import("@/lib/auth-session");
+      await authClient.auth.setSession({
         access_token: session.access_token,
         refresh_token: session.refresh_token,
       });
     } catch (error) {
-      console.error("Failed to sync Supabase session:", error);
+      console.error("Failed to store session:", error);
     }
   }
 
@@ -419,7 +419,6 @@ class APIClient {
   }
 
   // ===========================================
-<<<<<<< HEAD
   // VIDEO VERIFICATION
   // ===========================================
   async getVideoAnalyses(params?: { limit?: number; offset?: number; status?: string }) {
@@ -429,18 +428,18 @@ class APIClient {
     if (params?.status) searchParams.set("status", params.status);
 
     return this.request<{ success: boolean; analyses: any[]; count: number }>(
-      `/api/video/history?${searchParams.toString()}`
+      `/video/history?${searchParams.toString()}`
     );
   }
 
   async getVideoAnalysis(analysisId: string) {
     return this.request<{ success: boolean; analysis: any; frames: any[]; evidence: any[]; audio: any; agent_results: any[]; report: any }>(
-      `/api/video/analysis/${analysisId}`
+      `/video/analysis/${analysisId}`
     );
   }
 
   async deleteVideoAnalysis(analysisId: string) {
-    return this.request<{ success: boolean; message: string }>(`/api/video/analysis/${analysisId}`, {
+    return this.request<{ success: boolean; message: string }>(`/video/analysis/${analysisId}`, {
       method: "DELETE",
     });
   }
@@ -451,17 +450,19 @@ class APIClient {
     if (params?.offset) searchParams.set("offset", params.offset.toString());
 
     return this.request<{ success: boolean; reports: any[]; count: number }>(
-      `/api/video/reports?${searchParams.toString()}`
+      `/video/reports?${searchParams.toString()}`
     );
   }
 
   async getVideoReport(analysisId: string) {
-    return this.request<{ success: boolean; report: any }>(`/api/video/report/${analysisId}`);
+    return this.request<{ success: boolean; report: any }>(`/video/report/${analysisId}`);
   }
 
   async getVideoDashboard() {
-    return this.request<{ success: boolean; stats: any }>("/api/video/dashboard");
-=======
+    return this.request<{ success: boolean; stats: any }>("/video/dashboard");
+  }
+
+  // ===========================================
   // AI RUNTIME / HEALTH
   // ===========================================
   async getAIModels() {
@@ -480,7 +481,6 @@ class APIClient {
 
   async getAIRuntimeMetrics() {
     return { instances: [] };
->>>>>>> 1d3e6e3a998ce23ccb370911fd21097c3004c822
   }
 
   // ===========================================

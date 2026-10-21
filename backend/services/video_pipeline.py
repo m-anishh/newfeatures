@@ -17,7 +17,7 @@ import httpx
 
 from backend.core.config import settings
 from backend.core.logging import get_logger
-from backend.database.supabase_client import get_supabase_client
+from backend.database.db_client import get_db_client
 from backend.repositories.video_repository import video_repository
 from backend.services.video_evidence_collector import video_evidence_collector
 
@@ -37,7 +37,7 @@ class VideoPipeline:
     def __init__(self, user_id: str, analysis_id: str):
         self.user_id = user_id
         self.analysis_id = analysis_id
-        self.client = get_supabase_client()
+        self.client = get_db_client()
         self.start_time: float = 0.0
         self.results: Dict[str, Any] = {}
         self.agent_logs: List[Dict[str, Any]] = []

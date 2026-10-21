@@ -99,7 +99,13 @@ export default function RegisterPage() {
         setIsSubmitting(false);
         return;
       }
-      // Success: onAuthStateChange will update app state
+      // Account created: send the user to sign in, with the email pre-filled
+      try {
+        sessionStorage.setItem("visionx.registeredEmail", formData.email);
+      } catch {
+        // storage unavailable; the login form just starts empty
+      }
+      router.push("/login?registered=1");
     } catch (err: any) {
       setError("We couldn't create your account. Please try again.");
       setIsSubmitting(false);

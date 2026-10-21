@@ -9,7 +9,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
 from uuid import UUID
 
-from backend.database.supabase_client import get_supabase_client
+from backend.database.db_client import get_db_client
 from backend.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -19,7 +19,7 @@ class VideoRepository:
     """Repository for video analysis data access."""
 
     def __init__(self):
-        self.client = get_supabase_client()
+        self.client = get_db_client()
 
     async def create_analysis(self, user_id: UUID, input_type: str, input_content: str,
                              title: Optional[str] = None, source_url: Optional[str] = None,

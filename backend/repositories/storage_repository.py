@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Optional, Dict, Any, List
 from pathlib import Path
 
-from supabase import create_client
+from backend.database.db_client import get_db_client
 
 from backend.core.logging import get_logger
 from backend.core.exceptions import StorageError
@@ -35,12 +35,7 @@ class StorageRepository:
 
     def _get_client(self):
         if self._client is None:
-            import os
-            supabase_url = os.getenv("SUPABASE_URL")
-            supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SERVICE_KEY")
-            if not supabase_url or not supabase_key:
-                raise StorageError(message="Supabase storage is not configured")
-            self._client = create_client(supabase_url, supabase_key)
+            self._client = get_db_client()
         return self._client
     
     async def upload(

@@ -1,0 +1,50 @@
+# VisionX production stack. Run from the repo root on the server:
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/backend.Dockerfile
+    restart: unless-stopped
+    env_file: ../backend/.env
+    volumes:
+      - storage:/app/storage
+      - hf-cache:/home/app/.cache
+    expose:
+      - "8000"
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/frontend.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://${SITE_HOST}
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: https://${SITE_HOST}
+    expose:
+      - "3000"
+    depends_on:
+      - backend
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_HOST: ${SITE_HOST}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - backend
+      - frontend
+
+volumes:
+  storage:
+  hf-cache:
+  caddy-data:
+  caddy-config:

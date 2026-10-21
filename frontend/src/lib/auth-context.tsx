@@ -1,9 +1,9 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { supabase } from "./supabase";
+import { authClient } from "./auth-session";
 import { apiClient } from "./api-client";
-import type { User, Session } from "@supabase/supabase-js";
+import type { User, Session } from "./auth-session";
 
 interface AuthState {
   user: User | null;
@@ -42,7 +42,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    authClient.auth.getSession().then(({ data: { session } }) => {
       if (cancelled) return;
       const user = session?.user ?? null;
       setState({ user, session, loading: false });
@@ -51,7 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
+    } = authClient.auth.onAuthStateChange((event, session) => {
       if (cancelled) return;
       const user = session?.user ?? null;
       setState({ user, session, loading: false });
@@ -86,11 +86,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         apiClient.setToken(result.session.access_token);
       }
 
-      // Set backend session into Supabase so getSession/onAuthStateChange see it immediately
+      // Store backend session so getSession/onAuthStateChange see it immediately
       try {
         const backendSession = result.session;
         if (backendSession?.access_token && backendSession?.refresh_token) {
-          const { data, error } = await supabase.auth.setSession({
+          const { data, error } = await authClient.auth.setSession({
             access_token: backendSession.access_token,
             refresh_token: backendSession.refresh_token,
           });
@@ -109,25 +109,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { success: false, error: err.message || "Login failed. Please try again." };
     }
   };
-
-  // const signUp = async (email: string, password: string, fullName: string): Promise<AuthResult> => {
-  //   try {
-  //     const { data, error } = await supabase.auth.signUp({
-  //       email,
-  //       password,
-  //       options: { data: { full_name: fullName } },
-  //     });
-
-  //     if (error) {
-  //       return { success: false, error: error.message || "Registration failed" };
-  //     }
-
-  //     return { success: true };
-  //   } catch (err: any) {
-  //     console.error("SignUp error:", err);
-  //     return { success: false, error: err.message || "Registration failed" };
-  //   }
-  // };
 
   const signUp = async (
     email: string,
@@ -151,23 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
       }
 
-      // Best-effort: set the returned session in Supabase so getSession/onAuthStateChange see it
-      try {
-        const backendSession = result.session;
-        if (backendSession?.access_token && backendSession?.refresh_token) {
-          const { data, error } = await supabase.auth.setSession({
-            access_token: backendSession.access_token,
-            refresh_token: backendSession.refresh_token,
-          });
-          if (!error && data.session?.user) {
-            setState({ user: data.session.user, session: data.session, loading: false });
-            syncToken(data.session);
-          }
-        }
-      } catch {
-        // Ignore sync errors; do not block registration success
-      }
-
+      // Account created; the user signs in on the login page.
       return { success: true };
     } catch (err: any) {
       console.error("SignUp exception:", err);
@@ -177,12 +142,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         error:
           err?.message && err.message !== "{}"
             ? err.message
-            : "Registration failed. Please check your Supabase configuration.",
+            : "Registration failed. Please ensure the backend is running.",
       };
     }
   };
   const signOut = async () => {
-    await supabase.auth.signOut();
+    apiClient.clearToken();
+    await authClient.auth.signOut();
   };
 
   return (

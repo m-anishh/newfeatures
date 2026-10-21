@@ -1,7 +1,7 @@
 """
 VisionX Database Session Management
 Async SQLAlchemy engine and session factory with proper connection pooling.
-Supports Supabase PostgreSQL via connection string or individual credentials.
+Connects to PostgreSQL (AWS RDS or local) via DATABASE_URL.
 """
 
 from __future__ import annotations
@@ -35,9 +35,7 @@ def _build_connection_string() -> str:
     """
     Build an async PostgreSQL connection string from settings.
     
-    Priority:
-    1. DATABASE_URL (direct connection string)
-    2. SUPABASE_URL + SUPABASE_SERVICE_KEY (construct from parts)
+    Uses DATABASE_URL.
     """
     if settings.DATABASE_URL:
         # Convert sync URL to async if needed
@@ -48,19 +46,8 @@ def _build_connection_string() -> str:
             url = url.replace("postgres://", "postgresql+asyncpg://", 1)
         return url
 
-    if settings.SUPABASE_URL and settings.SUPABASE_SERVICE_KEY:
-        # Supabase connection: extract host and construct connection string
-        supabase_url = settings.SUPABASE_URL.rstrip("/")
-        # Extract project ref from URL
-        project_ref = supabase_url.replace("https://", "").split(".")[0]
-        db_host = f"db.{project_ref}.supabase.co"
-        db_password = settings.SUPABASE_SERVICE_KEY
-        return (
-            f"postgresql+asyncpg://postgres:{db_password}@{db_host}:5432/postgres"
-        )
-
     raise ConfigurationError(
-        message="Database not configured. Set DATABASE_URL or SUPABASE_URL + SUPABASE_SERVICE_KEY."
+        message="Database not configured. Set DATABASE_URL in backend/.env."
     )
 
 

@@ -11,7 +11,7 @@ import {
   FileText, Activity, Settings, LogOut, User as UserIcon,
   ChevronDown
 } from "lucide-react";
-import type { User } from "@supabase/supabase-js";
+import type { User } from "@/lib/auth-session";
 
 interface LoggedInNavbarProps {
   user: User;

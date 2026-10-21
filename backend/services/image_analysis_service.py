@@ -16,7 +16,7 @@ from io import BytesIO
 
 from backend.core.logging import get_logger
 from backend.core.exceptions import AnalysisError, ValidationError
-from backend.database.supabase_client import get_supabase_client
+from backend.database.db_client import get_db_client
 
 logger = get_logger(__name__)
 
@@ -54,7 +54,7 @@ class ImageAnalysisService:
 
     def _get_client(self):
         if self._client is None:
-            self._client = get_supabase_client()
+            self._client = get_db_client()
         return self._client
 
     def _get_gemini_model(self):
@@ -643,11 +643,9 @@ Analyze for: pixel anomalies, compression artifacts, lighting inconsistencies, e
 
         # Save report - non-critical
         try:
-            report_id_value = f"VX-{analysis_id[:8].upper()}"
             self._get_client().schema("public").table("reports").insert({
                 "user_id": user_id,
                 "analysis_id": analysis_id,
-                "report_id": report_id_value,
                 "title": report_data.get("executive_summary", {}).get("verdict", "Analysis Report"),
                 "trust_score": trust["trust_score"],
                 "authenticity_status": trust["verdict"],

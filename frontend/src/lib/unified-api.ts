@@ -30,9 +30,15 @@ class UnifiedAPIClient {
     switch (module) {
       case "image": return "/api/v1/analysis";
       case "news": return "/api/v1/news";
-      case "video": return "/api/video";
+      case "video": return "/video";
       default: return "/api/v1/analysis";
     }
+  }
+
+  // Single-analysis URL: the image API uses /analyses/{id}, news and video use /analysis/{id}
+  private analysisPath(module: string, id: string): string {
+    const segment = module === "news" || module === "video" ? "analysis" : "analyses";
+    return `${this.modulePath(module)}/${segment}/${id}`;
   }
 
   // ==================== ANALYSIS ====================
@@ -62,7 +68,7 @@ class UnifiedAPIClient {
   }
 
   async getAnalysis(module: string, id: string) {
-    return this.request<any>(`${this.modulePath(module)}/analysis/${id}`);
+    return this.request<any>(this.analysisPath(module, id));
   }
 
   async listAnalyses(module: string = "all", params?: { limit?: number; offset?: number; status?: string }) {
@@ -71,7 +77,7 @@ class UnifiedAPIClient {
       const [image, news, video] = await Promise.all([
         this.request<{ success: boolean; analyses: any[]; count: number }>(`/api/v1/analysis/analyses?${new URLSearchParams(params as any).toString()}`).catch(() => ({ analyses: [], count: 0 })),
         this.request<{ success: boolean; analyses: any[]; count: number }>(`/api/v1/news/analysis?${new URLSearchParams(params as any).toString()}`).catch(() => ({ analyses: [], count: 0 })),
-        this.request<{ success: boolean; analyses: any[]; count: number }>(`/api/video/history?${new URLSearchParams(params as any).toString()}`).catch(() => ({ analyses: [], count: 0 })),
+        this.request<{ success: boolean; analyses: any[]; count: number }>(`/video/history?${new URLSearchParams(params as any).toString()}`).catch(() => ({ analyses: [], count: 0 })),
       ]);
       const combined = [
         ...(image.analyses || []).map((a: any) => ({ ...a, module: "image" })),
@@ -80,13 +86,20 @@ class UnifiedAPIClient {
       ].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
       return { analyses: combined.slice(0, params?.limit || 50), count: combined.length };
     }
+    const query = new URLSearchParams(params as any).toString();
+    if (module === "video") {
+      return this.request<{ success: boolean; analyses: any[]; count: number }>(
+        `${this.modulePath(module)}/history?${query}`
+      );
+    }
+    const path = module === "image" ? "analyses" : "analysis";
     return this.request<{ success: boolean; analyses: any[]; count: number }>(
-      `${this.modulePath(module)}/analysis${module === "video" ? "" : "?" + new URLSearchParams(params as any).toString()}`
+      `${this.modulePath(module)}/${path}?${query}`
     );
   }
 
   async deleteAnalysis(module: string, id: string) {
-    return this.request<{ success: boolean; message: string }>(`${this.modulePath(module)}/analysis/${id}`, { method: "DELETE" });
+    return this.request<{ success: boolean; message: string }>(this.analysisPath(module, id), { method: "DELETE" });
   }
 
   // ==================== REPORTS ====================
@@ -95,7 +108,7 @@ class UnifiedAPIClient {
       const [image, news, video] = await Promise.all([
         this.request<{ success: boolean; reports: any[]; count: number }>(`/api/v1/reports/?${new URLSearchParams(params as any).toString()}`).catch(() => ({ reports: [], count: 0 })),
         this.request<{ success: boolean; reports: any[]; count: number }>(`/api/v1/news/reports?${new URLSearchParams(params as any).toString()}`).catch(() => ({ reports: [], count: 0 })),
-        this.request<{ success: boolean; reports: any[]; count: number }>(`/api/video/reports?${new URLSearchParams(params as any).toString()}`).catch(() => ({ reports: [], count: 0 })),
+        this.request<{ success: boolean; reports: any[]; count: number }>(`/video/reports?${new URLSearchParams(params as any).toString()}`).catch(() => ({ reports: [], count: 0 })),
       ]);
       const combined = [
         ...(image.reports || []).map((r: any) => ({ ...r, module: "image" })),
@@ -110,7 +123,7 @@ class UnifiedAPIClient {
   }
 
   async getReport(module: string, id: string) {
-    if (module === "video") return this.request<any>(`/api/video/report/${id}`);
+    if (module === "video") return this.request<any>(`/video/report/${id}`);
     return this.request<any>(`/api/v1/reports/${id}`);
   }
 
@@ -119,7 +132,7 @@ class UnifiedAPIClient {
     const [image, news, video] = await Promise.all([
       this.request<{ success: boolean; stats: any }>("/api/v1/dashboard/").catch(() => ({ stats: {} })),
       this.request<{ success: boolean; stats: any }>("/api/v1/news/dashboard").catch(() => ({ stats: {} })),
-      this.request<{ success: boolean; stats: any }>("/api/video/dashboard").catch(() => ({ stats: {} })),
+      this.request<{ success: boolean; stats: any }>("/video/dashboard").catch(() => ({ stats: {} })),
     ]);
 
     const i = image.stats || {};

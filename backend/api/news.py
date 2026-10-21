@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, Q
 from backend.core.exceptions import NotFoundError, ValidationError
 from backend.core.logging import get_logger
 from backend.api.dependencies import get_current_user
-from backend.database.supabase_client import get_supabase_client
+from backend.database.db_client import get_db_client
 from backend.services.news_verification_service import news_verification_service
 
 logger = get_logger(__name__)
@@ -25,7 +25,7 @@ router = APIRouter(prefix="/api/v1/news", tags=["news"])
 
 
 def _client():
-    return get_supabase_client().schema("public")
+    return get_db_client().schema("public")
 
 
 @router.post("/analyze")
@@ -67,7 +67,7 @@ async def analyze_news(
             try:
                 file_ext = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
                 storage_path = f"uploads/{user_id}/{uuid.uuid4()}.{file_ext}"
-                client = get_supabase_client()
+                client = get_db_client()
                 client.storage.from_("visionx-news").upload(storage_path, image_data, {"content-type": file.content_type or "image/jpeg"})
                 input_content = f"[File: {file.filename}, Storage: {storage_path}]"
             except Exception as upload_error:

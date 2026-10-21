@@ -18,7 +18,7 @@ from backend.core.exceptions import NotFoundError, ValidationError
 from backend.core.logging import get_logger
 from backend.api.dependencies import get_current_user
 from backend.api.deps import get_user_from_query_token
-from backend.database.supabase_client import get_supabase_client
+from backend.database.db_client import get_db_client
 from backend.events.event_bus import event_bus
 from backend.services.image_analysis_service import image_analysis_service
 from backend.services.video_analysis_service import video_analysis_service
@@ -29,7 +29,7 @@ router = APIRouter(prefix="/api/v1/analysis", tags=["analysis"])
 
 
 def _client():
-    return get_supabase_client().schema("public")
+    return get_db_client().schema("public")
 
 
 @router.post("/analyze")

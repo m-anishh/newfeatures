@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional, List
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File, Form
 from pydantic import BaseModel, Field
 
 from backend.api.dependencies import get_current_user
@@ -25,6 +25,13 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/video", tags=["video"])
 
 
+def _user_id(current_user: Any) -> Optional[str]:
+    """get_current_user returns the user id string; accept dicts too."""
+    if isinstance(current_user, dict):
+        return _user_id(current_user) or current_user.get("sub")
+    return current_user
+
+
 # Endpoints
 @router.post("/upload", response_model=Dict[str, Any])
 async def upload_video(
@@ -34,11 +41,11 @@ async def upload_video(
     source_url: Optional[str] = Form(None),
     video_metadata: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
 ):
     """Upload a video for analysis."""
     try:
-        user_id = current_user.get("id")
+        user_id = _user_id(current_user)
         if not user_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
@@ -118,11 +125,11 @@ async def upload_video(
 @router.get("/analysis/{analysis_id}", response_model=Dict[str, Any])
 async def get_analysis(
     analysis_id: str,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
 ):
     """Get video analysis details."""
     try:
-        user_id = current_user.get("id")
+        user_id = _user_id(current_user)
         if not user_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
@@ -146,16 +153,16 @@ async def get_analysis(
 async def get_history(
     limit: int = 20,
     offset: int = 0,
-    status: Optional[str] = None,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    current_user: str = Depends(get_current_user),
 ):
     """Get video analysis history."""
     try:
-        user_id = current_user.get("id")
+        user_id = _user_id(current_user)
         if not user_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
-        result = await video_service.list_analyses(user_id, limit=limit, offset=offset, status=status)
+        result = await video_service.list_analyses(user_id, limit=limit, offset=offset, status=status_filter)
         return {
             "success": True,
             "analyses": result.get("analyses", []),
@@ -172,11 +179,11 @@ async def get_history(
 @router.get("/report/{analysis_id}", response_model=Dict[str, Any])
 async def get_report(
     analysis_id: str,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
 ):
     """Get video analysis report."""
     try:
-        user_id = current_user.get("id")
+        user_id = _user_id(current_user)
         if not user_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
@@ -200,11 +207,11 @@ async def get_report(
 async def list_reports(
     limit: int = 20,
     offset: int = 0,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
 ):
     """List all video reports for user."""
     try:
-        user_id = current_user.get("id")
+        user_id = _user_id(current_user)
         if not user_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
@@ -224,11 +231,11 @@ async def list_reports(
 
 @router.get("/dashboard", response_model=Dict[str, Any])
 async def get_dashboard(
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
 ):
     """Get video analysis dashboard statistics."""
     try:
-        user_id = current_user.get("id")
+        user_id = _user_id(current_user)
         if not user_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
@@ -248,11 +255,11 @@ async def get_dashboard(
 @router.delete("/analysis/{analysis_id}")
 async def delete_analysis(
     analysis_id: str,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
 ):
     """Delete a video analysis."""
     try:
-        user_id = current_user.get("id")
+        user_id = _user_id(current_user)
         if not user_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 

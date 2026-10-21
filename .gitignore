@@ -169,3 +169,6 @@ yarn-error.log*
 !tests/playwright/
 !tests/e2e/
 !.gitignore
+
+# Production stack (no secrets; values come from env files on the server)
+!deploy/docker-compose.yml

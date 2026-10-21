@@ -16,11 +16,10 @@ from datetime import datetime, timezone
 from enum import Enum
 
 import httpx
-from supabase import create_client
 
 from backend.core.config import settings
 from backend.core.logging import get_logger
-from backend.database.supabase_client import get_supabase_client
+from backend.database.db_client import get_db_client
 
 logger = get_logger(__name__)
 
@@ -38,7 +37,7 @@ class NewsPipeline:
     def __init__(self, user_id: str, analysis_id: str):
         self.user_id = user_id
         self.analysis_id = analysis_id
-        self.client = get_supabase_client()
+        self.client = get_db_client()
         self.results: Dict[str, Any] = {}
         self.evidence: List[Dict[str, Any]] = []
         self.agent_logs: List[Dict[str, Any]] = []
@@ -1036,7 +1035,7 @@ RECOMMENDATION:
 
             doc.build(story)
 
-            # Upload to Supabase Storage
+            # Save PDF to report storage
             import os
             with open(pdf_path, 'rb') as f:
                 pdf_data = f.read()

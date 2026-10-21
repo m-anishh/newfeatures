@@ -618,7 +618,7 @@ export default function DashboardPage() {
               </div>
               <div className="mb-3">
                 <div className="flex justify-between text-xs text-slate-500 mb-1.5">
-                  <span>Supabase Storage</span>
+                  <span>Report Storage</span>
                   <span>{data?.completed_reports || 0} files</span>
                 </div>
                 <Progress value={Math.min((data?.completed_reports ?? 0) * 5, 100)} max={100} className="h-2 rounded-full bg-blue-50" />
@@ -642,7 +642,7 @@ export default function DashboardPage() {
               </div>
               <div className="space-y-2.5">
                 <HealthRow label="API Server" value="Healthy" icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} />
-                <HealthRow label="Supabase" value="Connected" icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} />
+                <HealthRow label="Database (AWS RDS)" value="Connected" icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} />
                 <HealthRow label="Storage" value="Available" icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} />
                 <HealthRow label="Uptime" value="24/7" icon={<Activity className="w-4 h-4 text-blue-500" />} />
               </div>

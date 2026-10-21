@@ -20,10 +20,10 @@ Base.__allow_unmapped__ = True
 
 class UserProfile(Base):
     """
-    User profile information extending Supabase Auth user.
+    User profile information for a VisionX user.
     
     Attributes:
-        id: UUID from Supabase Auth (primary key)
+        id: UUID of the user (primary key)
         email: User email
         full_name: User's full name
         username: Unique username

@@ -1,24 +1,28 @@
 """
 Authentication Routes - REST endpoints for authentication.
-Integrates with Supabase Auth for seamless frontend integration.
+Users live in the PostgreSQL `users` table; sessions are JWTs from backend.core.auth.
 """
 
 from __future__ import annotations
 
-import logging
-from typing import Optional
+import re
+import uuid
+from typing import Optional, Dict, Any
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from backend.core.auth import REFRESH, create_session, decode_token, hash_password, verify_password
 from backend.core.logging import get_logger
-from backend.core.exceptions import ValidationError, AuthenticationError
-from backend.api.dependencies import verify_supabase_token
+from backend.core.exceptions import ValidationError, AuthenticationError, ConflictError, InvalidTokenError
+from backend.api.dependencies import verify_access_token
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 # Request/Response Models
@@ -52,220 +56,170 @@ class AuthResponse(BaseModel):
     profile: Optional[dict] = None
 
 
-def get_supabase_client():
-    """Get Supabase client (lazy import to avoid circular dependencies)."""
+def get_db():
+    """Get database client (lazy import to avoid circular dependencies)."""
     try:
-        from backend.database.supabase_client import get_supabase_client as _get_client
-        return _get_client()
+        from backend.database.db_client import get_db_client
+        return get_db_client()
     except Exception as e:
-        logger.error(f"Failed to get Supabase client: {e}")
+        logger.error(f"Failed to get database client: {e}")
         raise HTTPException(status_code=500, detail="Authentication service unavailable")
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _find_user_by_email(db, email: str) -> Optional[Dict[str, Any]]:
+    # Emails are stored lower-cased, so an exact match is case-insensitive
+    result = db.table("users").select("*").eq("email", email.strip().lower()).limit(1).execute()
+    return result.data[0] if result.data else None
+
+
+def _get_profile(db, user_id: str) -> Optional[Dict[str, Any]]:
+    result = db.table("profiles").select("*").eq("id", user_id).limit(1).execute()
+    if not result.data:
+        return None
+    p = result.data[0]
+    return {
+        "id": p.get("id"),
+        "email": p.get("email"),
+        "full_name": p.get("full_name"),
+        "username": p.get("username"),
+        "avatar_url": p.get("avatar_url"),
+        "bio": p.get("bio"),
+        "created_at": p.get("created_at"),
+    }
+
+
+def _user_payload(user: Dict[str, Any], full_name: Optional[str]) -> Dict[str, Any]:
+    return {
+        "id": user["id"],
+        "email": user["email"],
+        "full_name": full_name,
+        "created_at": user.get("created_at"),
+        "user_metadata": {"full_name": full_name},
+    }
+
+
+def _bearer(request: Request) -> str:
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise AuthenticationError(message="Authentication required")
+    return auth_header[7:]
 
 
 @router.post("/register", response_model=AuthResponse)
 async def register(request: RegisterRequest):
-    """Register a new user with Supabase Auth."""
+    """Register a new user. The user signs in separately afterwards."""
+    email = request.email.strip().lower()
+    if not _EMAIL_RE.match(email):
+        raise ValidationError(message="Please enter a valid email address")
+    if len(request.password) < 8:
+        raise ValidationError(message="Password must be at least 8 characters")
+
+    db = get_db()
     try:
-        supabase = get_supabase_client()
-        
-        # Register user with Supabase Auth
-        result = supabase.auth.sign_up({
-            "email": request.email,
-            "password": request.password,
-            "options": {
-                "data": {
-                    "full_name": request.full_name,
-                }
-            }
-        })
-        
-        if result.user is None:
-            raise ValidationError(message="Registration failed")
-        
-        # Create user profile in database using direct Supabase call
-        try:
-            supabase.schema("public").table("profiles").upsert({
-                "id": result.user.id,
-                "email": request.email,
-                "full_name": request.full_name,
-                "role": "user",
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }).execute()
-            logger.info(f"[Register] Profile created for user {result.user.id}")
-        except Exception as e:
-            logger.warning(f"[Register] Profile creation failed: {e}")
-        
+        if _find_user_by_email(db, email):
+            raise ConflictError(message="An account with this email already exists")
+
+        now = _now()
+        user = db.table("users").insert({
+            "id": str(uuid.uuid4()),
+            "email": email,
+            "password_hash": hash_password(request.password),
+            "last_sign_in_at": now,
+            "created_at": now,
+            "updated_at": now,
+        }).execute().data[0]
+
+        db.table("profiles").upsert({
+            "id": user["id"],
+            "email": email,
+            "full_name": request.full_name,
+            "role": "user",
+            "created_at": now,
+            "updated_at": now,
+        }).execute()
+        logger.info(f"[Register] User created {user['id']}")
+
         return AuthResponse(
             success=True,
-            message="Registration successful. Please check your email to confirm.",
-            user={
-                "id": result.user.id,
-                "email": result.user.email,
-                "full_name": request.full_name,
-            },
-            session={
-                "access_token": result.session.access_token if result.session else None,
-                "refresh_token": result.session.refresh_token if result.session else None,
-                "expires_at": result.session.expires_at if result.session else None,
-            } if result.session else None,
+            message="Account created. Please sign in.",
+            user=_user_payload(user, request.full_name),
         )
-    
-    except ValidationError:
+
+    except (ValidationError, ConflictError):
         raise
     except Exception as e:
         logger.error(f"Registration failed: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise ValidationError(message="Registration failed. Please try again.")
 
 
 @router.post("/login", response_model=AuthResponse)
 async def login(request: LoginRequest):
-    """Login user with Supabase Auth."""
+    """Login with email and password."""
+    db = get_db()
     try:
-        supabase = get_supabase_client()
-        
-        # Login with Supabase Auth
-        result = supabase.auth.sign_in_with_password({
-            "email": request.email,
-            "password": request.password,
-        })
-        
-        if result.user is None or result.session is None:
+        user = _find_user_by_email(db, request.email)
+        if user is None or not verify_password(request.password, user["password_hash"]):
             raise AuthenticationError(message="Invalid email or password")
-        
-        # Get user profile
+
+        db.table("users").update({"last_sign_in_at": _now()}).eq("id", user["id"]).execute()
+
         profile_data = None
         try:
-            from backend.database.session import get_session
-            from backend.models.user import UserProfile
-            
-            async for session in get_session():
-                from sqlalchemy import select
-                stmt = select(UserProfile).where(UserProfile.id == result.user.id)
-                profile = (await session.execute(stmt)).scalar_one_or_none()
-                if profile:
-                    profile_data = {
-                        "id": profile.id,
-                        "email": profile.email,
-                        "full_name": profile.full_name,
-                        "username": profile.username,
-                        "avatar_url": profile.avatar_url,
-                        "bio": profile.bio,
-                    }
+            profile_data = _get_profile(db, user["id"])
         except Exception as e:
             logger.warning(f"Profile fetch failed (non-critical): {e}")
-        
+        full_name = profile_data.get("full_name") if profile_data else None
+
         return AuthResponse(
             success=True,
             message="Login successful",
-            user={
-                "id": result.user.id,
-                "email": result.user.email,
-                "full_name": profile_data.get("full_name") if profile_data else None,
-            },
-            session={
-                "access_token": result.session.access_token,
-                "refresh_token": result.session.refresh_token,
-                "expires_at": result.session.expires_at,
-            },
+            user=_user_payload(user, full_name),
+            session=create_session(user["id"], user["email"]),
             profile=profile_data,
         )
-    
+
     except AuthenticationError:
         raise
     except Exception as e:
         logger.error(f"Login failed: {e}")
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        raise HTTPException(status_code=500, detail="Login failed. Please try again.")
 
 
 @router.post("/logout", response_model=AuthResponse)
 async def logout(request: Request):
-    """Logout user by invalidating Supabase session."""
-    try:
-        # Get token from Authorization header
-        auth_header = request.headers.get("authorization", "")
-        token = None
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
-        
-        if token:
-            try:
-                supabase = get_supabase_client()
-                supabase.auth.sign_out()
-            except Exception as e:
-                logger.warning(f"Supabase logout failed (non-critical): {e}")
-        
-        return AuthResponse(
-            success=True,
-            message="Logout successful",
-        )
-    
-    except Exception as e:
-        logger.error(f"Logout failed: {e}")
-        return AuthResponse(
-            success=True,
-            message="Logout successful",
-        )
+    """Logout. Tokens are stateless JWTs, so the client simply discards them."""
+    return AuthResponse(success=True, message="Logout successful")
 
 
 @router.get("/me", response_model=AuthResponse)
 async def get_current_user_info(request: Request):
-    """Get current user information from Supabase token."""
+    """Get current user information from the access token."""
+    payload = verify_access_token(_bearer(request))
+    db = get_db()
     try:
-        # Get token from Authorization header
-        auth_header = request.headers.get("authorization", "")
-        if not auth_header.startswith("Bearer "):
-            raise AuthenticationError(message="Authentication required")
-        
-        token = auth_header[7:]
-        
-        # Verify token with Supabase - use anon key client for user token verification
-        import os
-        from supabase import create_client
-        supabase_url = os.getenv("SUPABASE_URL")
-        supabase_anon_key = os.getenv("SUPABASE_ANON_KEY")
-        
-        if supabase_url and supabase_anon_key:
-            anon_client = create_client(supabase_url, supabase_anon_key)
-            result = anon_client.auth.get_user(token)
-        else:
-            # Fallback: use service role client
-            supabase = get_supabase_client()
-            result = supabase.auth.get_user(token)
-        
-        if result.user is None:
-            raise AuthenticationError(message="Invalid or expired token")
-        
-        # Get user profile from Supabase profiles table
+        result = db.table("users").select("id,email,created_at").eq("id", payload["sub"]).limit(1).execute()
+        if not result.data:
+            raise AuthenticationError(message="User no longer exists")
+        user = result.data[0]
+
         profile_data = None
         try:
-            supabase = get_supabase_client()
-            profile_result = supabase.schema("public").table("profiles").select("*").eq("id", result.user.id).execute()
-            if profile_result.data:
-                p = profile_result.data[0]
-                profile_data = {
-                    "id": p.get("id"),
-                    "email": p.get("email"),
-                    "full_name": p.get("full_name"),
-                    "username": p.get("username"),
-                    "avatar_url": p.get("avatar_url"),
-                    "bio": p.get("bio"),
-                    "created_at": p.get("created_at"),
-                }
+            profile_data = _get_profile(db, user["id"])
         except Exception as e:
             logger.warning(f"Profile fetch failed (non-critical): {e}")
-        
+        full_name = profile_data.get("full_name") if profile_data else None
+
         return AuthResponse(
             success=True,
             message="User info retrieved",
-            user={
-                "id": result.user.id,
-                "email": result.user.email,
-                "full_name": profile_data.get("full_name") if profile_data else None,
-            },
+            user=_user_payload(user, full_name),
             profile=profile_data,
         )
-    
+
     except AuthenticationError:
         raise
     except Exception as e:
@@ -276,62 +230,25 @@ async def get_current_user_info(request: Request):
 @router.put("/profile", response_model=AuthResponse)
 async def update_profile(request: Request, data: UpdateProfileRequest):
     """Update user profile."""
+    payload = verify_access_token(_bearer(request))
+    user_id = payload["sub"]
+    user_email = payload.get("email", "")
+    db = get_db()
     try:
-        # Get token from Authorization header
-        auth_header = request.headers.get("authorization", "")
-        if not auth_header.startswith("Bearer "):
-            raise AuthenticationError(message="Authentication required")
-        
-        token = auth_header[7:]
-        
-        payload = verify_supabase_token(token)
-        user_id = payload["sub"]
-        user_email = payload.get("email", "")
-        
-        # Update profile in Supabase profiles table
-        supabase = get_supabase_client()
-        
-        # Build update data - only include columns that exist in the profiles table
-        update_data = {}
-        if data.full_name is not None:
-            update_data["full_name"] = data.full_name
-        if data.avatar_url is not None:
-            update_data["avatar_url"] = data.avatar_url
-        update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
-        
-        # Upsert profile
-        profile_result = supabase.schema("public").table("profiles").upsert({
-            "id": user_id,
-            "email": user_email or "",
-            **update_data
-        }).execute()
-        
-        if profile_result.data:
-            p = profile_result.data[0]
-            profile_data = {
-                "id": p.get("id"),
-                "email": p.get("email"),
-                "full_name": p.get("full_name"),
-                "username": p.get("username"),
-                "avatar_url": p.get("avatar_url"),
-                "bio": p.get("bio"),
-            }
-        else:
-            profile_data = {
-                "id": user_id,
-                "email": user_email or "",
-                "full_name": data.full_name,
-                "username": data.username,
-                "avatar_url": data.avatar_url,
-                "bio": data.bio,
-            }
-        
+        update_data: Dict[str, Any] = {"id": user_id, "email": user_email or "", "updated_at": _now()}
+        for field in ("full_name", "avatar_url", "username", "bio"):
+            value = getattr(data, field)
+            if value is not None:
+                update_data[field] = value
+
+        db.table("profiles").upsert(update_data).execute()
+
         return AuthResponse(
             success=True,
             message="Profile updated successfully",
-            profile=profile_data,
+            profile=_get_profile(db, user_id),
         )
-    
+
     except AuthenticationError:
         raise
     except Exception as e:
@@ -341,56 +258,38 @@ async def update_profile(request: Request, data: UpdateProfileRequest):
 
 @router.post("/reset-password", response_model=AuthResponse)
 async def reset_password(request: ResetPasswordRequest):
-    """Request password reset email."""
-    try:
-        supabase = get_supabase_client()
-        
-        # Send password reset email via Supabase
-        supabase.auth.reset_password_for_email(request.email)
-        
-        return AuthResponse(
-            success=True,
-            message="Password reset email sent. Please check your inbox.",
-        )
-    
-    except Exception as e:
-        logger.error(f"Password reset failed: {e}")
-        return AuthResponse(
-            success=True,
-            message="If the email exists, a password reset link has been sent.",
-        )
+    """Request password reset email.
+
+    No email provider is configured yet (e.g. AWS SES), so this only logs the request.
+    The response is the same whether or not the email exists.
+    """
+    logger.warning(f"Password reset requested for {request.email}, but no email service is configured")
+    return AuthResponse(
+        success=True,
+        message="If the email exists, a password reset link has been sent.",
+    )
 
 
 @router.post("/refresh-token")
 async def refresh_token(request: Request):
     """Refresh access token using refresh token."""
+    body = await request.json()
+    token = body.get("refresh_token")
+    if not token:
+        raise ValidationError(message="Refresh token required")
+
     try:
-        # Get refresh token from request body
-        body = await request.json()
-        refresh_token = body.get("refresh_token")
-        
-        if not refresh_token:
-            raise ValidationError(message="Refresh token required")
-        
-        supabase = get_supabase_client()
-        
-        # Refresh session
-        result = supabase.auth.refresh_session(refresh_token)
-        
-        if result.session is None:
-            raise AuthenticationError(message="Invalid refresh token")
-        
-        return {
-            "success": True,
-            "session": {
-                "access_token": result.session.access_token,
-                "refresh_token": result.session.refresh_token,
-                "expires_at": result.session.expires_at,
-            },
-        }
-    
-    except (AuthenticationError, ValidationError):
-        raise
-    except Exception as e:
-        logger.error(f"Token refresh failed: {e}")
-        raise HTTPException(status_code=401, detail="Failed to refresh token")
+        claims = decode_token(token, REFRESH)
+    except InvalidTokenError:
+        raise AuthenticationError(message="Invalid refresh token")
+
+    db = get_db()
+    result = db.table("users").select("id,email").eq("id", claims["sub"]).limit(1).execute()
+    if not result.data:
+        raise AuthenticationError(message="Invalid refresh token")
+    user = result.data[0]
+
+    return {
+        "success": True,
+        "session": create_session(user["id"], user["email"]),
+    }

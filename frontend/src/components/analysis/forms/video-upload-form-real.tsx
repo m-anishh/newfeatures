@@ -15,7 +15,12 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 
-export default function VideoUploadForm() {
+interface VideoUploadFormProps {
+  onComplete?: (data: any) => void;
+  onError?: (error: string) => void;
+}
+
+export default function VideoUploadForm({ onComplete, onError }: VideoUploadFormProps) {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [dragActive, setDragActive] = useState(false);

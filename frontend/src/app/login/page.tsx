@@ -15,6 +15,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [registered, setRegistered] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { user, loading, signIn } = useAuth();
   const router = useRouter();
@@ -24,6 +25,21 @@ export default function LoginPage() {
       router.push("/dashboard");
     }
   }, [user, loading, router]);
+
+  // Coming from sign-up: show a confirmation and pre-fill the email
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("registered") !== "1") return;
+    setRegistered(true);
+    try {
+      const saved = sessionStorage.getItem("visionx.registeredEmail");
+      if (saved) {
+        setEmail(saved);
+        sessionStorage.removeItem("visionx.registeredEmail");
+      }
+    } catch {
+      // storage unavailable
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,6 +115,12 @@ export default function LoginPage() {
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
+                {registered && !error && (
+                  <Alert variant="success" title="Account created">
+                    Please sign in with your new account.
+                  </Alert>
+                )}
+
                 {error && (
                   <Alert variant="error" title="Error">
                     {error}

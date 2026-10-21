@@ -1,0 +1,3 @@
+# Scripts and container files must keep Unix line endings (they run on Linux)
+*.sh text eol=lf
+deploy/* text eol=lf

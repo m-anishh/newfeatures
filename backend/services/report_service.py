@@ -1,6 +1,6 @@
 """
 Report Service - Coordinates report generation and retrieval.
-Uses direct Supabase client access instead of repository dependency.
+Uses the database client directly instead of a repository dependency.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from datetime import datetime
 import os
 from backend.core.logging import get_logger
 from backend.core.exceptions import AnalysisError
-from backend.database.supabase_client import get_supabase_client
+from backend.database.db_client import get_db_client
 
 # API base URL for constructing full PDF URLs
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
@@ -23,7 +23,7 @@ logger = get_logger(__name__)
 class ReportService:
     """
     Service for managing reports.
-    Uses Supabase client directly for database operations.
+    Uses the database client directly for database operations.
     """
 
     def __init__(self):
@@ -31,7 +31,7 @@ class ReportService:
 
     def _get_client(self):
         if self._client is None:
-            self._client = get_supabase_client()
+            self._client = get_db_client()
         return self._client
 
     def _table(self):

@@ -5,7 +5,8 @@ ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} \
     NEXT_TELEMETRY_DISABLED=1
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+# A lock file made on Windows can lack Linux-only optional packages; fall back to npm install
+RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
 COPY frontend/ ./
 RUN npm run build
 
